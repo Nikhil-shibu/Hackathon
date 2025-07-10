@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Accessibility App
 
 A comprehensive Flutter application designed to provide accessibility features for users with diverse needs.
@@ -88,3 +89,7 @@ This app is built with accessibility in mind, featuring:
 ## License
 
 This project is licensed under the MIT License. 
+=======
+# Hackathon
+10-07-2025
+>>>>>>> 8015fa3725a26187cdfd903e6f8849f7af2f1557
