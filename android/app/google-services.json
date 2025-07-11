@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "717455876904",
+    "project_id": "thriveminds-953a9",
+    "storage_bucket": "thriveminds-953a9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:717455876904:android:4ed4e828bca141acab661d",
+        "android_client_info": {
+          "package_name": "com.example.thrive_mind"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwAFhaBNTF44GsPXJf2o7uKP2Ps9ZI_Is"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
