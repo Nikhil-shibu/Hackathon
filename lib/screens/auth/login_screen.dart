@@ -186,6 +186,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Navigate to condition selection screen when login is successful
       if (mounted && userCredential.user != null) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Login successful!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
         // Small delay to ensure UI is ready
         await Future.delayed(const Duration(milliseconds: 100));
         

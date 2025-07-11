@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../themes/minimalistic_theme.dart';
 import '../home_screen.dart';
 import '../dementia/dementia_home_screen.dart';
-import '../../themes/minimalistic_theme.dart';
 import 'login_screen.dart';
 
-class ConditionSelectionScreen extends StatelessWidget {
+class ConditionSelectionScreen extends StatefulWidget {
   const ConditionSelectionScreen({super.key});
 
+  @override
+  State<ConditionSelectionScreen> createState() => _ConditionSelectionScreenState();
+}
+
+class _ConditionSelectionScreenState extends State<ConditionSelectionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -195,5 +201,50 @@ class ConditionSelectionScreen extends StatelessWidget {
         builder: (context) => destinationScreen,
       ),
     );
+  }
+
+  Future<void> _signOut() async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      await FirebaseAuth.instance.signOut();
+
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (context.mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const LoginScreen(),
+          ),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if it's still open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Show error message
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error logging out: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

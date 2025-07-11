@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:intl/intl.dart';
+import 'package:timezone/timezone.dart' as tz;
+import '../../services/ml_prediction_service.dart';
+import '../../services/data_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class MedicationRemindersScreen extends StatefulWidget {
   const MedicationRemindersScreen({super.key});
@@ -17,11 +22,52 @@ class _MedicationRemindersScreenState extends State<MedicationRemindersScreen> {
   // User-customized medication data
   List<Medication> _medications = [];
   
-  @override
+@override
   void initState() {
     super.initState();
     _initializeTts();
     _initializeNotifications();
+    _loadMedicationsAndPredict();
+  }
+  
+  void _loadMedicationsAndPredict() {
+    _medications = _fetchMedications(); // Fetch medications from Firebase or local storage
+    for (final medication in _medications) {
+      _predictMedicationReminder(medication);
+    }
+  }
+  
+  List<Medication> _fetchMedications() {
+    // In a real app, this would fetch from Firebase
+    // For now, return sample data
+    return [
+      Medication(
+        id: '1',
+        name: 'Aspirin',
+        dosage: '1 tablet',
+        times: ['8:00 AM', '8:00 PM'],
+        color: Colors.red,
+        shape: MedicationShape.round,
+        instructions: 'Take with food',
+        isTaken: [false, false],
+        lastTaken: null,
+        sideEffects: 'May cause stomach upset',
+        prescribedBy: 'Dr. Smith',
+      ),
+      Medication(
+        id: '2',
+        name: 'Metformin',
+        dosage: '500mg',
+        times: ['7:00 AM', '7:00 PM'],
+        color: Colors.blue,
+        shape: MedicationShape.oval,
+        instructions: 'Take with meals',
+        isTaken: [false, false],
+        lastTaken: null,
+        sideEffects: 'May cause nausea',
+        prescribedBy: 'Dr. Johnson',
+      ),
+    ];
   }
   
   @override
@@ -626,6 +672,9 @@ class _MedicationRemindersScreenState extends State<MedicationRemindersScreen> {
       medication.lastTaken = DateTime.now();
     });
     
+    // Record data for ML learning
+    _recordMedicationData(medication, timeIndex);
+    
     _speakText('Good job! You took your ${medication.name}.');
     
     ScaffoldMessenger.of(context).showSnackBar(
@@ -646,6 +695,19 @@ class _MedicationRemindersScreenState extends State<MedicationRemindersScreen> {
     _notifyCaregiver(medication);
   }
   
+  void _recordMedicationData(Medication medication, int timeIndex) async {
+    final dataService = DataService();
+    final user = FirebaseAuth.instance.currentUser;
+    
+    if (user != null) {
+      await dataService.recordMedicationTaken(
+        user.uid,
+        medication.name,
+        DateTime.now(),
+      );
+    }
+  }
+  
   void _notifyCaregiver(Medication medication) {
     // Simulate caregiver notification
     Future.delayed(const Duration(seconds: 1), () {
@@ -659,9 +721,58 @@ class _MedicationRemindersScreenState extends State<MedicationRemindersScreen> {
     });
   }
   
-  Future<void> _readMedicationInfo(Medication medication) async {
+Future<void> _readMedicationInfo(Medication medication) async {
     final info = '${medication.name}. Take ${medication.dosage} at ${medication.times.join(' and ')}. ${medication.instructions}';
     await _speakText(info);
+  }
+  
+  Future<void> _predictMedicationReminder(Medication medication) async {
+    final predictionService = MLPredictionService();
+    for (final time in medication.times) {
+      final dateTime = DateFormat.jm().parse(time);
+      final now = DateTime.now();
+      final targetTime = DateTime(now.year, now.month, now.day, dateTime.hour, dateTime.minute);
+      final result = await predictionService.predictForgetfulness(
+        'user_id', // Replace with actual user ID
+        taskType: 'medication',
+        targetTime: targetTime,
+        itemName: medication.name,
+      );
+      if (result.forgetfulnessRisk > 0.5) {
+        _scheduleReminder(medication, targetTime, result.recommendations);
+      }
+    }
+  }
+  
+  void _scheduleReminder(Medication medication, DateTime time, List<String> recommendations) {
+    final notificationDetails = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'med_reminder',
+        'Medication Reminders',
+        channelDescription: 'Reminders for taking medications',
+        importance: Importance.max,
+        priority: Priority.high,
+      ),
+    );
+    
+    // Schedule notification 30 minutes before the target time
+    final reminderTime = time.subtract(Duration(minutes: 30));
+    final scheduledTime = tz.TZDateTime.from(reminderTime, tz.local);
+    
+    final recommendationText = recommendations.isNotEmpty 
+        ? recommendations.first 
+        : 'Time to take your ${medication.name}';
+    
+    _notificationsPlugin.zonedSchedule(
+      medication.id.hashCode,
+      'Medication Reminder: ${medication.name}',
+      recommendationText,
+      scheduledTime,
+      notificationDetails,
+      androidAllowWhileIdle: true,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
   }
   
   Future<void> _readAllMedications() async {

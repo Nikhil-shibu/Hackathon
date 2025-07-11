@@ -49,6 +49,14 @@ class _DementiaHomeScreenState extends State<DementiaHomeScreen> {
     }
   }
 
+  String _getCurrentDateString() {
+    final now = DateTime.now();
+    final days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    final months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    return '${days[now.weekday - 1]}, ${months[now.month - 1]} ${now.day}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -118,6 +126,23 @@ class _DementiaHomeScreenState extends State<DementiaHomeScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
+                        IconButton(
+                          icon: Icon(
+                            Icons.arrow_back,
+                            color: MinimalisticTheme.textSecondary,
+                            size: 28,
+                          ),
+                          onPressed: () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ConditionSelectionScreen(),
+                              ),
+                            );
+                          },
+                          tooltip: 'Logout',
+                        ),
+                        const SizedBox(width: 8),
                         IconButton(
                           icon: Icon(
                             Icons.arrow_back,
@@ -361,19 +386,6 @@ class _DementiaHomeScreenState extends State<DementiaHomeScreen> {
     );
   }
 
-  String _getCurrentDateString() {
-    final now = DateTime.now();
-    final weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    final months = ['January', 'February', 'March', 'April', 'May', 'June', 
-                   'July', 'August', 'September', 'October', 'November', 'December'];
-    
-    final weekday = weekdays[now.weekday - 1];
-    final month = months[now.month - 1];
-    final day = now.day;
-    final year = now.year;
-    
-    return '$weekday, $month $day, $year';
-  }
 
   void _navigateToFeature(BuildContext context, Widget screen) {
     Navigator.push(
@@ -485,6 +497,44 @@ class _DementiaHomeScreenState extends State<DementiaHomeScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _signOut() async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Sign out from Firebase
+      await FirebaseAuth.instance.signOut();
+
+      // Close loading dialog
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // The AuthWrapper will automatically handle navigation to login screen
+    } catch (e) {
+      // Close loading dialog if it's still open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      // Show error message
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error logging out: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
 }

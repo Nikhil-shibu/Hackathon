@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:intl/intl.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
+import '../../services/ml_prediction_service.dart';
+import '../../services/data_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class DailyRoutineScreen extends StatefulWidget {
   const DailyRoutineScreen({super.key});
@@ -11,13 +17,17 @@ class DailyRoutineScreen extends StatefulWidget {
 
 class _DailyRoutineScreenState extends State<DailyRoutineScreen> {
   final FlutterTts _flutterTts = FlutterTts();
+  final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
   List<RoutineTask> _todaysTasks = [];
   int _selectedTaskIndex = -1;
+  final MLPredictionService _mlPredictionService = MLPredictionService();
+  final DataService _dataService = DataService();
 
   @override
   void initState() {
     super.initState();
     _initializeTts();
+    _initializeNotifications();
     _loadTodaysTasks();
   }
 
@@ -33,12 +43,170 @@ class _DailyRoutineScreenState extends State<DailyRoutineScreen> {
     await _flutterTts.setVolume(1.0);
     await _flutterTts.setPitch(1.0);
   }
+  
+  Future<void> _initializeNotifications() async {
+    const initializationSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      iOS: DarwinInitializationSettings(),
+    );
+    
+    await _notificationsPlugin.initialize(initializationSettings);
+  }
 
   void _loadTodaysTasks() {
     // Load user's custom tasks from storage
-    // Start with empty list - users will add their own tasks
-    _todaysTasks = [];
+    _todaysTasks = _getSampleTasks(); // Get sample tasks or load from database
+    _predictTaskReminders(); // Run ML predictions for all tasks
     setState(() {});
+  }
+  
+  List<RoutineTask> _getSampleTasks() {
+    // Sample tasks for demonstration
+    return [
+      RoutineTask(
+        id: '1',
+        title: 'Morning Medication',
+        time: '8:00 AM',
+        icon: Icons.medical_services,
+        color: Colors.red,
+        description: 'Take morning pills with breakfast',
+        isCompleted: false,
+        isRepeating: true,
+        category: 'Medication',
+      ),
+      RoutineTask(
+        id: '2',
+        title: 'Morning Walk',
+        time: '9:00 AM',
+        icon: Icons.directions_walk,
+        color: Colors.green,
+        description: '20-minute walk around the block',
+        isCompleted: false,
+        isRepeating: true,
+        category: 'Exercise',
+      ),
+      RoutineTask(
+        id: '3',
+        title: 'Lunch',
+        time: '12:00 PM',
+        icon: Icons.restaurant,
+        color: Colors.orange,
+        description: 'Have lunch and take afternoon medication',
+        isCompleted: false,
+        isRepeating: true,
+        category: 'Meals',
+      ),
+      RoutineTask(
+        id: '4',
+        title: 'Call Family',
+        time: '3:00 PM',
+        icon: Icons.phone,
+        color: Colors.blue,
+        description: 'Weekly call with family members',
+        isCompleted: false,
+        isRepeating: false,
+        category: 'Family',
+      ),
+      RoutineTask(
+        id: '5',
+        title: 'Evening Medication',
+        time: '7:00 PM',
+        icon: Icons.medical_services,
+        color: Colors.red,
+        description: 'Take evening pills with dinner',
+        isCompleted: false,
+        isRepeating: true,
+        category: 'Medication',
+      ),
+    ];
+  }
+  
+  Future<void> _predictTaskReminders() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    for (final task in _todaysTasks) {
+      try {
+        // Parse task time
+        final taskTime = _parseTaskTime(task.time);
+        
+        // Get ML prediction
+        final prediction = await _mlPredictionService.predictForgetfulness(
+          user.uid,
+          taskType: 'routine',
+          targetTime: taskTime,
+          itemName: task.title,
+        );
+        
+        // Store prediction for analytics
+        await _mlPredictionService.storePredictionResult(prediction);
+        
+        // Schedule reminders based on risk level
+        if (prediction.forgetfulnessRisk > 0.4) {
+          _scheduleTaskReminder(task, taskTime, prediction);
+        }
+        
+        print('Prediction for ${task.title}: ${prediction.riskLevel} risk (${(prediction.forgetfulnessRisk * 100).toInt()}%)');
+        
+      } catch (e) {
+        print('Error predicting for task ${task.title}: $e');
+      }
+    }
+  }
+  
+  DateTime _parseTaskTime(String timeString) {
+    try {
+      final now = DateTime.now();
+      final time = DateFormat.jm().parse(timeString);
+      return DateTime(now.year, now.month, now.day, time.hour, time.minute);
+    } catch (e) {
+      // Default to current time if parsing fails
+      return DateTime.now();
+    }
+  }
+  
+  void _scheduleTaskReminder(RoutineTask task, DateTime taskTime, PredictionResult prediction) {
+    final notificationDetails = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'routine_reminder',
+        'Routine Reminders',
+        channelDescription: 'Reminders for daily routine tasks',
+        importance: Importance.max,
+        priority: Priority.high,
+      ),
+    );
+    
+    // Calculate reminder time based on risk level
+    Duration reminderOffset;
+    if (prediction.forgetfulnessRisk > 0.7) {
+      reminderOffset = Duration(hours: 1); // High risk: 1 hour before
+    } else if (prediction.forgetfulnessRisk > 0.5) {
+      reminderOffset = Duration(minutes: 45); // Medium risk: 45 minutes before
+    } else {
+      reminderOffset = Duration(minutes: 30); // Low risk: 30 minutes before
+    }
+    
+    final reminderTime = taskTime.subtract(reminderOffset);
+    
+    // Only schedule if reminder time is in the future
+    if (reminderTime.isAfter(DateTime.now())) {
+      final scheduledTime = tz.TZDateTime.from(reminderTime, tz.local);
+      
+      final recommendationText = prediction.recommendations.isNotEmpty
+          ? prediction.recommendations.first
+          : 'Reminder: ${task.title} at ${task.time}';
+      
+      _notificationsPlugin.zonedSchedule(
+        task.id.hashCode,
+        'Routine Reminder: ${task.title}',
+        recommendationText,
+        scheduledTime,
+        notificationDetails,
+        androidAllowWhileIdle: true,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    }
   }
 
   @override
@@ -373,8 +541,20 @@ class _DailyRoutineScreenState extends State<DailyRoutineScreen> {
     });
     
     if (task.isCompleted) {
+      _recordTaskData(task);
       _speakText('Great job! You completed ${task.title}');
       _showCompletionFeedback(task);
+    }
+  }
+  
+  void _recordTaskData(RoutineTask task) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      await _dataService.recordTaskCompletion(
+        user.uid,
+        task.title,
+        DateTime.now(),
+      );
     }
   }
 
